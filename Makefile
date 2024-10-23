@@ -22,3 +22,5 @@ clean:
 	
 distclean: clean
 	rm -f $(TARGETS)
+
+remake: distclean all

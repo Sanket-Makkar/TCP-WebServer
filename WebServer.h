@@ -33,6 +33,7 @@ class WebServer{
         // core methods used behind the scenes
         void setupListening(struct protoent* protoinfo, int &listenSD, struct sockaddr_in &sin);
         void awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, int listenSD);
+        void respondToRequest(int &responseSD);
     public:
         WebServer(int argLine, string portNumber, string rootDirectory, string authenticationToken); // basic constructor
         ~WebServer() = default; // nothing special for destructor

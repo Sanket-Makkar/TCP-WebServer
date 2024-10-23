@@ -32,7 +32,9 @@
 // Helpful variables for initialization of counters, handling off-by-one errors, and comparisons
 #define COUNTER_INITIAL_VALUE 0
 #define OFF_BY_ONE_OFFSET 1
+#define DECREMENT -1
 #define FUNCTION_ERROR_RETURN_VALUE -1
+#define BUFLEN 1024
 
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
@@ -61,12 +63,8 @@ void WebServer::serverLive(int argc, char *argv []){
     // and prepare for a new connection
     awaitConnection(&addr, responseSD, listenSD);
 
-    /* write message to the connection */
-    string hello = "hello I am on port: " + portNum + "\n";
-    if (write(responseSD, hello.c_str(),strlen (hello.c_str())) < 0){
-        exitWithErr;
-    }
-
+    respondToRequest(responseSD);
+    
     // and when we are done lets wrap everything up
     close (listenSD);
     close (responseSD);
@@ -106,6 +104,26 @@ void WebServer::awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, 
     responseSD = accept(listenSD,sdDataHolder,&addrlen);
     if (responseSD < 0){
         fprintf(stderr, "error accepting connection");
+        exitWithErr;
+    }
+}
+
+void WebServer::respondToRequest(int &responseSD){
+    // first we want to grab the whole request
+    vector<unsigned char> wholeRequest;
+    char buf[BUFLEN];
+    size_t bytesRead;
+
+    // FILE * rsp = fdopen(responseSD, "r+");
+    while ((bytesRead = read(responseSD, buf, sizeof(buf)))){
+        wholeRequest.insert(wholeRequest.end(), buf, buf + bytesRead); 
+        string wholeStr(wholeRequest.begin(), wholeRequest.end());
+        if (int(wholeStr.find("\r\n\r\n")) > -1)
+            break;
+    }
+
+    // send back the message
+    if (write(responseSD, wholeRequest.data(), wholeRequest.size()) < 0) {
         exitWithErr;
     }
 }

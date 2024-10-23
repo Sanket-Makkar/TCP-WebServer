@@ -34,6 +34,8 @@ class WebServer{
         void setupListening(struct protoent* protoinfo, int &listenSD, struct sockaddr_in &sin);
         void awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, int listenSD);
         void respondToRequest(int &responseSD);
+        int findOccurances(string toRead, string occurancesSubstring);
+        void readResponse(string &response, int &responseSD);
     public:
         WebServer(int argLine, string portNumber, string rootDirectory, string authenticationToken); // basic constructor
         ~WebServer() = default; // nothing special for destructor

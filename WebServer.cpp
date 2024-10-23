@@ -109,21 +109,76 @@ void WebServer::awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, 
 }
 
 void WebServer::respondToRequest(int &responseSD){
-    // first we want to grab the whole request
-    vector<unsigned char> wholeRequest;
-    char buf[BUFLEN];
-    size_t bytesRead;
+    // We will, at some point, send a string response
+    string response = "HTTP/1.1 400 Malformed Request\r\n\r\n";
 
-    // FILE * rsp = fdopen(responseSD, "r+");
-    while ((bytesRead = read(responseSD, buf, sizeof(buf)))){
-        wholeRequest.insert(wholeRequest.end(), buf, buf + bytesRead); 
-        string wholeStr(wholeRequest.begin(), wholeRequest.end());
-        if (int(wholeStr.find("\r\n\r\n")) > -1)
-            break;
-    }
+    readResponse(response, responseSD);
 
     // send back the message
     if (write(responseSD, wholeRequest.data(), wholeRequest.size()) < 0) {
         exitWithErr;
     }
+}
+
+int WebServer::findOccurances(string toRead, string occurancesSubstring){
+    string copyToRead = toRead;
+    int found;
+    int totalFound = 0;
+    while (found = copyToRead.find(occurancesSubstring.c_str()) > -1){
+        totalFound++;
+        copyToRead = copyToRead.substr(found + OFF_BY_ONE_OFFSET);
+    }
+    return totalFound;
+}
+
+void WebServer::readResponse(string &response, int &responseSD){
+    // We will only format the response if the entire response is not malformed
+
+    // first we want to grab the whole request
+    vector<unsigned char> wholeRequest;
+    char buf[BUFLEN];
+    size_t bytesRead;
+
+    bool noDoubleNewline = false;
+    while ((bytesRead = read(responseSD, buf, sizeof(buf)))){
+        wholeRequest.insert(wholeRequest.end(), buf, buf + bytesRead); 
+        string wholeStr(wholeRequest.begin(), wholeRequest.end());
+        
+        // if we don't find a "\r\n\r\n" within a reasonable frame
+        if (wholeStr.length() > BUFLEN * BUFLEN){
+            noDoubleNewline = true;
+            break;
+        }
+
+        if (int(wholeStr.find("\r\n\r\n")) > -1)
+            break;
+    }
+    
+    /* First Check Malformed Request*/
+    // No found "\r\n\r\n"
+    if (!noDoubleNewline)
+        break;
+
+    // each line not terminated by \r\n
+    string totalRequest = str(wholeRequest.begin(), wholeRequest.end());
+    if ((findOccurances(totalRequest, ":") + OFF_BY_ONE_OFFSET) >= findOccurances(totalRequest, "\r\n")){
+        break;
+    }
+
+    // the first line is not of form "METHOD ARGUMENT HTTP/VERSION\r\n"
+    string firstLine = totalRequest.substr(COUNTER_INITIAL_VALUE, totalRequest.find("\r\n"));
+    if (findOccurances(firstLine, " ") != 2) // this means we don't have two separators - so not matching form
+        break;
+
+    string versionString = firstLine.substr(firstLine.rfind(" "));
+    if (versionString.find("/") < 0) // if we don't have a '/' in the version, it is not of the same form
+        break;
+
+    /* Second Check Protocol Not Implemented */
+    if (versionString.substr(COUNTER_INITIAL_VALUE, strlen("HTTP/") + OFF_BY_ONE_OFFSET) != "HTTP/") // if we don't have the HTTP/
+        response = "HTTP/1.1 501 Protocol Not Implemented\r\n\r\n";
+        break;
+    
+    /* Third Check Unsupported Method */
+    
 }

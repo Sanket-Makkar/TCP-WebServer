@@ -36,6 +36,18 @@
 #define FUNCTION_ERROR_RETURN_VALUE -1
 #define BUFLEN 1024
 
+// methods available for user
+#define VALID_GET_METHOD "GET"
+#define VALID_SHUTDOWN_METHOD "SHUTDOWN"
+
+// possible headers
+#define MALFORMED "HTTP/1.1 400 Malformed Request\r\n\r\n"
+#define UNIMPLEMENTED_PROTOCOL "HTTP/1.1 501 Protocol Not Implemented\r\n\r\n"
+#define UNSUPPORTED_METHOD "HTTP/1.1 405 Unsupported Method\r\n\r\n"
+#define INVALID_FILE_NAME "HTTP/1.1 406 Invalid Filename\r\n\r\n"
+#define FILE_NOT_FOUND "HTTP/1.1 404 File Not Found\r\n\r\n"
+#define OK_HEADER "HTTP/1.1 200 OK\r\n\r\n"
+
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
 #define exitWithNoErr exit(COUNTER_INITIAL_VALUE)
@@ -110,30 +122,47 @@ void WebServer::awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, 
 
 void WebServer::respondToRequest(int &responseSD){
     // We will, at some point, send a string response
-    string response = "HTTP/1.1 400 Malformed Request\r\n\r\n";
+    string response = MALFORMED;
 
-    readResponse(response, responseSD);
+    // consider response formatting requirements
+    bool goodFormatting = true;
+    vector<string> methodAndArg = readResponse(response, responseSD, goodFormatting);
+    string method = methodAndArg.at(COUNTER_INITIAL_VALUE);
+    string arg = methodAndArg.at(COUNTER_INITIAL_VALUE + OFF_BY_ONE_OFFSET);
 
-    // send back the message
-    if (write(responseSD, wholeRequest.data(), wholeRequest.size()) < 0) {
-        exitWithErr;
+    /* Handle GET and SHUTDOWN cases */
+    if (method == VALID_GET_METHOD){
+        
+        char * fileBuff;
+        fileBuff = getFile(arg, response, goodFormatting);
+
+        // send back the header
+        if (write(responseSD, response.c_str(), response.size()) < 0) {
+            exitWithErr;
+        }
+        // and don't forget the file
+        if (fileBuff != NULL){
+            string strFileBuff = fileBuff;
+            if (write(responseSD, fileBuff, strFileBuff.length()) < 0){
+                exitWithErr;
+            }
+        }
     }
+    
 }
 
 int WebServer::findOccurances(string toRead, string occurancesSubstring){
     string copyToRead = toRead;
     int found;
     int totalFound = 0;
-    while (found = copyToRead.find(occurancesSubstring.c_str()) > -1){
+    while ((found = copyToRead.find(occurancesSubstring.c_str())) > -1){
         totalFound++;
         copyToRead = copyToRead.substr(found + OFF_BY_ONE_OFFSET);
     }
     return totalFound;
 }
 
-void WebServer::readResponse(string &response, int &responseSD){
-    // We will only format the response if the entire response is not malformed
-
+vector<string> WebServer::readResponse(string &response, int &responseSD, bool &goodFormatting){
     // first we want to grab the whole request
     vector<unsigned char> wholeRequest;
     char buf[BUFLEN];
@@ -156,29 +185,81 @@ void WebServer::readResponse(string &response, int &responseSD){
     
     /* First Check Malformed Request*/
     // No found "\r\n\r\n"
-    if (!noDoubleNewline)
-        break;
-
+    if (!noDoubleNewline){
+        goodFormatting = false;
+        
+    }
     // each line not terminated by \r\n
     string totalRequest = str(wholeRequest.begin(), wholeRequest.end());
     if ((findOccurances(totalRequest, ":") + OFF_BY_ONE_OFFSET) >= findOccurances(totalRequest, "\r\n")){
+        goodFormatting = false;
         break;
     }
 
     // the first line is not of form "METHOD ARGUMENT HTTP/VERSION\r\n"
     string firstLine = totalRequest.substr(COUNTER_INITIAL_VALUE, totalRequest.find("\r\n"));
-    if (findOccurances(firstLine, " ") != 2) // this means we don't have two separators - so not matching form
+    if (findOccurances(firstLine, " ") != 2){ // this means we don't have two separators - so not matching form
+        goodFormatting = false;
         break;
+    }
 
     string versionString = firstLine.substr(firstLine.rfind(" "));
-    if (versionString.find("/") < 0) // if we don't have a '/' in the version, it is not of the same form
+    if (versionString.find("/") < 0){ // if we don't have a '/' in the version, it is not of the same form
+        goodFormatting = false;
         break;
+    }
 
     /* Second Check Protocol Not Implemented */
-    if (versionString.substr(COUNTER_INITIAL_VALUE, strlen("HTTP/") + OFF_BY_ONE_OFFSET) != "HTTP/") // if we don't have the HTTP/
-        response = "HTTP/1.1 501 Protocol Not Implemented\r\n\r\n";
+    if (versionString.substr(COUNTER_INITIAL_VALUE, strlen("HTTP/") + OFF_BY_ONE_OFFSET) != "HTTP/"){ // if we don't have the HTTP/
+        response = UNIMPLEMENTED_PROTOCOL;
+        goodFormatting = false;
         break;
+    }
     
-    /* Third Check Unsupported Method */
+    /* Prepare for Third Check Unsupported Method */
+    string methodString = firstLine.substr(COUNTER_INITIAL_VALUE, firstLine.find(" "));
+    // not get or shutdown - inform user of problem
+    if (methodString != VALID_GET_METHOD && methodString != VALID_SHUTDOWN_METHOD){ 
+        response = UNSUPPORTED_METHOD;
+        goodFormatting = false;
+        break;
+    }
+
+    // now figure out what the argument is
+    string postMethodString = firstLine.substr(firstLine.find(" ") + OFF_BY_ONE_OFFSET);
+    string argumentString = postMethodString.substr(COUNTER_INITIAL_VALUE, postMethodString.find(" ")); // from after "METHOD " to before " HTTP/VERSION"
     
+    vector<string> methodAndArgumentBucket = {methodString, argumentString};
+}
+
+char * WebServer::getFile(string arg, string &response, bool &goodFormatting){
+    // does it start with a '/'
+        if (arg.at(COUNTER_INITIAL_VALUE) != "/"){
+            response = INVALID_FILE_NAME;
+            break;
+        }
+        // create full path
+        string toOpen = rootDir + arg;
+        
+        // open requested file
+        FILE * requestedFile = fopen(toOpen.c_str(), "r");
+        if (requestedFile == NULL){
+            response = FILE_NOT_FOUND;
+            return NULL;
+        }
+        
+        // now we want the contents, so we can use a fseek trick to get the whole file without much work.
+        fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_END); // pull the file pointer to the end
+        int requestedFileSize = ftell(requestedFile); // now find the position
+        fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_SET); // now pull the file pointer back to the beginning
+
+        char * fileBuff = new char[requestedFileSize];
+        fileBuff = fread(fileBuff, OFF_BY_ONE_OFFSET, requestedFileSize, requestedFile);
+
+        // at this point, if we have made it here
+        if (goodFormatting){ // we know that there was no problem - so lets format the response appropriately
+            response = OK_HEADER;
+        }
+
+        return fileBuff;
 }

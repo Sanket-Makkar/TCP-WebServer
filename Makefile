@@ -8,7 +8,7 @@ TARGETS = proj3
 
 all: $(TARGETS)
 
-$(TARGETS): proj3.o ArgParser.o 
+$(TARGETS): proj3.o ArgParser.o WebServer.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 %.o: %.cc

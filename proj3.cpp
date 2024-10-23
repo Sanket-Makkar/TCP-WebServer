@@ -34,11 +34,9 @@ int main(int argc, char *argv[]){
     // execute parse args, passing in a callback that will grab file name, and returning/storing the args flag indicator
     int argLine = parseArgs(argc, argv, savePortNum, saveRootDir, saveAuthToken);
 
-    printf("%s\n%s\n%s\n", portNum.c_str(), rootDir.c_str(), authToken.c_str());
-    printf("argline = %d\n", argLine);
     WebServer server = WebServer(argLine, portNum, rootDir, authToken);
 
-    // client.grabFromNetwork();
+    server.serverLive(argc, argv);
 
     return 0;
 }

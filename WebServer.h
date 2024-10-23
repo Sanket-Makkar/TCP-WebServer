@@ -11,6 +11,16 @@
 
 #include <string>
 #include <vector>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <string.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
 using namespace std;
 
 class WebServer{
@@ -21,12 +31,13 @@ class WebServer{
         string authToken;
 
         // core methods used behind the scenes
-        void setupListening();
+        void setupListening(struct protoent* protoinfo, int &listenSD, struct sockaddr_in &sin);
+        void awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, int listenSD);
     public:
         WebServer(int argLine, string portNumber, string rootDirectory, string authenticationToken); // basic constructor
         ~WebServer() = default; // nothing special for destructor
 
-        void grabFromNetwork(); // method used to orchestrate core functionality (grabbing something from a url, reacting to CLI args, and saving it to a file)
+        void serverLive(int argc, char *argv []); // make the server live - core orchestrating method for functionality
 };
 
 #endif // WEB_SERVER_H

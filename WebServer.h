@@ -33,11 +33,12 @@ class WebServer{
         // core methods used behind the scenes
         void setupListening(struct protoent* protoinfo, int &listenSD, struct sockaddr_in &sin);
         void awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, int listenSD);
-        void respondToRequest(int &responseSD);
+        bool respondToRequest(int &responseSD);
         int findOccurances(string toRead, string occurancesSubstring);
         vector<string> readResponse(string &response, int &responseSD);
         char * getFile(string arg, string &response);
         void writeResponse(int socketDescriptor, string toWrite);
+        char* grabFileContents(FILE * file);
 
     public:
         WebServer(int argLine, string portNumber, string rootDirectory, string authenticationToken); // basic constructor

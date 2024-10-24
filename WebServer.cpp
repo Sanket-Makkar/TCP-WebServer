@@ -47,6 +47,8 @@
 #define INVALID_FILE_NAME "HTTP/1.1 406 Invalid Filename\r\n\r\n"
 #define FILE_NOT_FOUND "HTTP/1.1 404 File Not Found\r\n\r\n"
 #define OK_HEADER "HTTP/1.1 200 OK\r\n\r\n"
+#define OK_SERVER_SHUTDOWN "HTTP/1.1 200 Server Shutting Down\r\n\r\n"
+#define BAD_SERVER_NOT_SHUTDOWN "HTTP/1.1 403 Operation Forbidden\r\n\r\n"
 
 // exit options
 #define exitWithErr exit(FUNCTION_ERROR_RETURN_VALUE)
@@ -65,21 +67,26 @@ void WebServer::serverLive(int argc, char *argv []){
 
     // protocol info needs to be grabbed
     if ((protoinfo = getprotobyname (PROTOCOL)) == NULL){
-        fprintf(stderr, "cannot find protocol information for %s", PROTOCOL);
+        fprintf(stderr, "Error: cannot find protocol information for %s\n", PROTOCOL);
         exitWithErr;
     }
 
     // lets get listening on the right port number
     setupListening(protoinfo, listenSD, sin);
-
-    // and prepare for a new connection
-    awaitConnection(&addr, responseSD, listenSD);
-
-    respondToRequest(responseSD);
     
+    bool listenLoop = true;
+    while (listenLoop){
+        // and prepare for a new connection
+        awaitConnection(&addr, responseSD, listenSD);
+
+        // and respond to requests, which inform us if we should continue to keep the server alive (listening)
+        listenLoop = respondToRequest(responseSD);
+
+        close(responseSD);
+    }
+
     // and when we are done lets wrap everything up
     close (listenSD);
-    close (responseSD);
     exitWithNoErr;
 }
 
@@ -115,12 +122,12 @@ void WebServer::awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, 
     unsigned int addrlen = sizeof (sdDataHolder);
     responseSD = accept(listenSD,sdDataHolder,&addrlen);
     if (responseSD < 0){
-        fprintf(stderr, "error accepting connection");
+        fprintf(stderr, "Error: error accepting connection\n");
         exitWithErr;
     }
 }
 
-void WebServer::respondToRequest(int &responseSD){
+bool WebServer::respondToRequest(int &responseSD){
     // We will, at some point, send a string response
     string response = MALFORMED;
 
@@ -128,7 +135,7 @@ void WebServer::respondToRequest(int &responseSD){
     vector<string> methodAndArg = readResponse(response, responseSD);
     if (methodAndArg.empty()){ // if we failed within readResponse, it at least updated our response
         writeResponse(responseSD, response);
-        return;
+        return true;
     }
 
     // else lets continue as normal and deal with the method
@@ -141,21 +148,27 @@ void WebServer::respondToRequest(int &responseSD){
         fileBuff = getFile(arg, response);
         if (fileBuff == NULL){
             writeResponse(responseSD, response);
-            return;
+            return true;
         }
 
         // send back the header
-        if (write(responseSD, response.c_str(), response.size()) < 0) {
-            exitWithErr;
-        }
+        writeResponse(responseSD, response);
+
         // and don't forget the file
         if (fileBuff != NULL){
             string strFileBuff = fileBuff;
             writeResponse(responseSD, strFileBuff);
-            return;
+            return true;
         }
     }
-    
+    else if (method == VALID_SHUTDOWN_METHOD){
+        // now if we want to shut down, verify the auth token and tell the server what to do
+        bool continueResponding = (arg != authToken);
+        response = continueResponding? BAD_SERVER_NOT_SHUTDOWN : OK_SERVER_SHUTDOWN;
+        writeResponse(responseSD, response);
+        return continueResponding;
+    }
+    return false;
 }
 
 int WebServer::findOccurances(string toRead, string occurancesSubstring){
@@ -242,8 +255,10 @@ char * WebServer::getFile(string arg, string &response){
         response = INVALID_FILE_NAME;
         return NULL;
     }
+    else if (arg == "/"){
+        arg = "/index.html";
+    }
 
-    fprintf(stderr, "rd = %s\n%s\n", rootDir.c_str(), arg.c_str());
     // create full path
     string toOpen = rootDir + arg;
     
@@ -255,12 +270,10 @@ char * WebServer::getFile(string arg, string &response){
     }
     
     // now we want the contents, so we can use a fseek trick to get the whole file without much work.
-    fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_END); // pull the file pointer to the end
-    int requestedFileSize = ftell(requestedFile); // now find the position
-    fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_SET); // now pull the file pointer back to the beginning
+    char * fileBuff;
+    fileBuff = grabFileContents(requestedFile);
 
-    char * fileBuff = new char[requestedFileSize];
-    fread(fileBuff, OFF_BY_ONE_OFFSET, requestedFileSize, requestedFile);
+    fclose(requestedFile);
 
     // at this point, if we have made it here the formatting and checks must have been correct
     response = OK_HEADER;
@@ -270,6 +283,17 @@ char * WebServer::getFile(string arg, string &response){
 
 void WebServer::writeResponse(int socketDescriptor, string toWrite){
     if (write(socketDescriptor, toWrite.c_str(), toWrite.length()) < 0) { // so send what we have
+        fprintf(stderr, "Error: unable to write response\n");
         exitWithErr;
     }
+}
+
+char * WebServer::grabFileContents(FILE * file){
+    fseek(file, COUNTER_INITIAL_VALUE, SEEK_END); // file pointer at end
+    int fileSize = ftell(file); // tell position of pointer (gives size indirectly)
+    fseek(file, COUNTER_INITIAL_VALUE, SEEK_SET); // file pointer at start
+
+    char * fileBuff = new char[fileSize]; // now we will create a perfectly sized buffer
+    fread(fileBuff, OFF_BY_ONE_OFFSET, fileSize, file); // and fread into that buffer the file
+    return fileBuff; // and return the buffer - closing the file is on the person calling this
 }

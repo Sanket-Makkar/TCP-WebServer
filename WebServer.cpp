@@ -160,6 +160,7 @@ bool WebServer::respondToRequest(int &responseSD){
             writeResponse(responseSD, fileBuff, fileSize);
             return true;
         }
+        delete[] fileBuff;
     }
     else if (method == VALID_SHUTDOWN_METHOD){
         // now if we want to shut down, verify the auth token and tell the server what to do
@@ -189,8 +190,9 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
     size_t bytesRead;
     vector<string> methodAndArgumentBucket = {};
 
+    FILE * responseSP = fdopen(responseSD, "r");
     bool noDoubleNewline = false;
-    while ((bytesRead = read(responseSD, buf, sizeof(buf)))){
+    while ((fgets(buf, BUFLEN, responseSP) != NULL)){
         wholeRequest.insert(wholeRequest.end(), buf, buf + bytesRead); 
         string wholeStr(wholeRequest.begin(), wholeRequest.end());
         

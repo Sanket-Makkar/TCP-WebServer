@@ -192,6 +192,7 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
     FILE * responseSP = fdopen(responseSD, "r");
     if (responseSP == NULL){
         fprintf(stderr, "Error: failed to open response pointer");
+        exitWithErr;
     }
     bool noNewLine = false;
     while ((fgets(buf, BUFLEN, responseSP)) != NULL){ // grab from the socket line by line, put it in buf
@@ -206,7 +207,6 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
         }
         memset(buf, '\0', BUFLEN); // lets get rid of random values and make all values null-terminated by default
     }
-    fclose(responseSP);
     
     /* Check Malformed Request*/
     // No found "\r\n" for a particular line

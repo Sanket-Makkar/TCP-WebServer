@@ -187,34 +187,32 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
     // first we want to grab the whole request
     vector<unsigned char> wholeRequest;
     char buf[BUFLEN];
-    size_t bytesRead;
     vector<string> methodAndArgumentBucket = {};
 
     FILE * responseSP = fdopen(responseSD, "r");
-    bool noDoubleNewline = false;
-    while ((fgets(buf, BUFLEN, responseSP) != NULL)){
-        wholeRequest.insert(wholeRequest.end(), buf, buf + bytesRead); 
-        string wholeStr(wholeRequest.begin(), wholeRequest.end());
-        
-        // if we don't find a "\r\n\r\n" within a reasonable frame
-        if (wholeStr.length() > BUFLEN * BUFLEN){
-            noDoubleNewline = true;
+    bool noNewLine = false;
+    while ((fgets(buf, BUFLEN, responseSP)) != NULL){ // grab from the socket line by line, put it in buf
+        wholeRequest.insert(wholeRequest.end(), buf, buf + strlen(buf)); // we want to keep track of all data, so slap it on the end of the vector
+        string wholeStr = string(buf); // it can be useful to view the incoming line as a string
+        if (wholeStr.find("\r\n") < 0){
+            noNewLine = false;
             break;
         }
-
-        if (int(wholeStr.find("\r\n\r\n")) > -1)
+        if (wholeStr == "\n" || wholeStr == "\r\n"){ // even if we have a line with only \n, we will still pick that up later - so break if the line is just a newline
             break;
+        }
+        memset(buf, '\0', BUFLEN); // lets get rid of random values and make all values null-terminated by default
     }
     
     /* Check Malformed Request*/
-    // No found "\r\n\r\n"
-    if (noDoubleNewline){
+    // No found "\r\n" for a particular line
+    if (noNewLine){
         return methodAndArgumentBucket;    
     }
 
-    // each line not terminated by \r\n
+    // \r\n\r\n does not end the input
     string totalRequest = string(wholeRequest.begin(), wholeRequest.end());
-    if (findOccurances(totalRequest, ":") >= findOccurances(totalRequest, "\r\n")){
+    if (totalRequest.find("\r\n\r\n") + strlen("\r\n\r\n") != totalRequest.length()){
         return methodAndArgumentBucket;    
     }
 

@@ -125,16 +125,24 @@ void WebServer::respondToRequest(int &responseSD){
     string response = MALFORMED;
 
     // consider response formatting requirements
-    bool goodFormatting = true;
-    vector<string> methodAndArg = readResponse(response, responseSD, goodFormatting);
+    vector<string> methodAndArg = readResponse(response, responseSD);
+    if (methodAndArg.empty()){ // if we failed within readResponse, it at least updated our response
+        writeResponse(responseSD, response);
+        return;
+    }
+
+    // else lets continue as normal and deal with the method
     string method = methodAndArg.at(COUNTER_INITIAL_VALUE);
     string arg = methodAndArg.at(COUNTER_INITIAL_VALUE + OFF_BY_ONE_OFFSET);
 
     /* Handle GET and SHUTDOWN cases */
     if (method == VALID_GET_METHOD){
-        
         char * fileBuff;
-        fileBuff = getFile(arg, response, goodFormatting);
+        fileBuff = getFile(arg, response);
+        if (fileBuff == NULL){
+            writeResponse(responseSD, response);
+            return;
+        }
 
         // send back the header
         if (write(responseSD, response.c_str(), response.size()) < 0) {
@@ -143,9 +151,8 @@ void WebServer::respondToRequest(int &responseSD){
         // and don't forget the file
         if (fileBuff != NULL){
             string strFileBuff = fileBuff;
-            if (write(responseSD, fileBuff, strFileBuff.length()) < 0){
-                exitWithErr;
-            }
+            writeResponse(responseSD, strFileBuff);
+            return;
         }
     }
     
@@ -162,11 +169,12 @@ int WebServer::findOccurances(string toRead, string occurancesSubstring){
     return totalFound;
 }
 
-vector<string> WebServer::readResponse(string &response, int &responseSD, bool &goodFormatting){
+vector<string> WebServer::readResponse(string &response, int &responseSD){
     // first we want to grab the whole request
     vector<unsigned char> wholeRequest;
     char buf[BUFLEN];
     size_t bytesRead;
+    vector<string> methodAndArgumentBucket = {};
 
     bool noDoubleNewline = false;
     while ((bytesRead = read(responseSD, buf, sizeof(buf)))){
@@ -183,83 +191,85 @@ vector<string> WebServer::readResponse(string &response, int &responseSD, bool &
             break;
     }
     
-    /* First Check Malformed Request*/
+    /* Check Malformed Request*/
     // No found "\r\n\r\n"
-    if (!noDoubleNewline){
-        goodFormatting = false;
-        
+    if (noDoubleNewline){
+        return methodAndArgumentBucket;    
     }
+
     // each line not terminated by \r\n
-    string totalRequest = str(wholeRequest.begin(), wholeRequest.end());
+    string totalRequest = string(wholeRequest.begin(), wholeRequest.end());
     if ((findOccurances(totalRequest, ":") + OFF_BY_ONE_OFFSET) >= findOccurances(totalRequest, "\r\n")){
-        goodFormatting = false;
-        break;
+        return methodAndArgumentBucket;    
     }
 
     // the first line is not of form "METHOD ARGUMENT HTTP/VERSION\r\n"
     string firstLine = totalRequest.substr(COUNTER_INITIAL_VALUE, totalRequest.find("\r\n"));
     if (findOccurances(firstLine, " ") != 2){ // this means we don't have two separators - so not matching form
-        goodFormatting = false;
-        break;
+        return methodAndArgumentBucket;
     }
 
-    string versionString = firstLine.substr(firstLine.rfind(" "));
+    string versionString = firstLine.substr(firstLine.rfind(" ") + OFF_BY_ONE_OFFSET);
     if (versionString.find("/") < 0){ // if we don't have a '/' in the version, it is not of the same form
-        goodFormatting = false;
-        break;
+        return methodAndArgumentBucket;
     }
 
-    /* Second Check Protocol Not Implemented */
-    if (versionString.substr(COUNTER_INITIAL_VALUE, strlen("HTTP/") + OFF_BY_ONE_OFFSET) != "HTTP/"){ // if we don't have the HTTP/
+    /* Check Protocol Not Implemented */
+    if (versionString.substr(COUNTER_INITIAL_VALUE, strlen("HTTP/")) != "HTTP/"){ // if we don't have the HTTP/
         response = UNIMPLEMENTED_PROTOCOL;
-        goodFormatting = false;
-        break;
+        return methodAndArgumentBucket;
     }
     
-    /* Prepare for Third Check Unsupported Method */
+    /* Prepare for Check Unsupported Method */
     string methodString = firstLine.substr(COUNTER_INITIAL_VALUE, firstLine.find(" "));
     // not get or shutdown - inform user of problem
     if (methodString != VALID_GET_METHOD && methodString != VALID_SHUTDOWN_METHOD){ 
         response = UNSUPPORTED_METHOD;
-        goodFormatting = false;
-        break;
+        return methodAndArgumentBucket;
     }
 
     // now figure out what the argument is
     string postMethodString = firstLine.substr(firstLine.find(" ") + OFF_BY_ONE_OFFSET);
     string argumentString = postMethodString.substr(COUNTER_INITIAL_VALUE, postMethodString.find(" ")); // from after "METHOD " to before " HTTP/VERSION"
     
-    vector<string> methodAndArgumentBucket = {methodString, argumentString};
+    methodAndArgumentBucket = {methodString, argumentString};
+    return methodAndArgumentBucket;
 }
 
-char * WebServer::getFile(string arg, string &response, bool &goodFormatting){
+char * WebServer::getFile(string arg, string &response){
     // does it start with a '/'
-        if (arg.at(COUNTER_INITIAL_VALUE) != "/"){
-            response = INVALID_FILE_NAME;
-            break;
-        }
-        // create full path
-        string toOpen = rootDir + arg;
-        
-        // open requested file
-        FILE * requestedFile = fopen(toOpen.c_str(), "r");
-        if (requestedFile == NULL){
-            response = FILE_NOT_FOUND;
-            return NULL;
-        }
-        
-        // now we want the contents, so we can use a fseek trick to get the whole file without much work.
-        fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_END); // pull the file pointer to the end
-        int requestedFileSize = ftell(requestedFile); // now find the position
-        fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_SET); // now pull the file pointer back to the beginning
+    if (arg.at(COUNTER_INITIAL_VALUE) != '/'){
+        response = INVALID_FILE_NAME;
+        return NULL;
+    }
 
-        char * fileBuff = new char[requestedFileSize];
-        fileBuff = fread(fileBuff, OFF_BY_ONE_OFFSET, requestedFileSize, requestedFile);
+    fprintf(stderr, "rd = %s\n%s\n", rootDir.c_str(), arg.c_str());
+    // create full path
+    string toOpen = rootDir + arg;
+    
+    // open requested file
+    FILE * requestedFile = fopen(toOpen.c_str(), "r");
+    if (requestedFile == NULL){
+        response = FILE_NOT_FOUND;
+        return NULL;
+    }
+    
+    // now we want the contents, so we can use a fseek trick to get the whole file without much work.
+    fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_END); // pull the file pointer to the end
+    int requestedFileSize = ftell(requestedFile); // now find the position
+    fseek(requestedFile, COUNTER_INITIAL_VALUE, SEEK_SET); // now pull the file pointer back to the beginning
 
-        // at this point, if we have made it here
-        if (goodFormatting){ // we know that there was no problem - so lets format the response appropriately
-            response = OK_HEADER;
-        }
+    char * fileBuff = new char[requestedFileSize];
+    fread(fileBuff, OFF_BY_ONE_OFFSET, requestedFileSize, requestedFile);
 
-        return fileBuff;
+    // at this point, if we have made it here the formatting and checks must have been correct
+    response = OK_HEADER;
+
+    return fileBuff;
+}
+
+void WebServer::writeResponse(int socketDescriptor, string toWrite){
+    if (write(socketDescriptor, toWrite.c_str(), toWrite.length()) < 0) { // so send what we have
+        exitWithErr;
+    }
 }

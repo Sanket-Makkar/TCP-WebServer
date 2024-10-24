@@ -2,7 +2,7 @@
     CaseID:         sxm1626
     File Name:      proj3.cpp
     Date Created:   10/17/2024
-    Description:    This is the file that contains a main function for the simple CLI web-based client.
+    Description:    This is the file that contains a main function for the simple CLI web-based server.
                     The point behind making this file is mostly to orchestrate functionality held within other
                     files of this project.
 */

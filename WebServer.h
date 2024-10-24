@@ -1,10 +1,9 @@
 /*  Name: Sanket Makkar
     CaseID:         sxm1626
     File Name:      WebServer.h
-    Date Created:   10/20/2024
-    Description:    The purpose of this file is to define a header for the core functionality - i.e. the socket
-                    work and arg-responses based on resulting socket work - as required by this assignment for
-                    the server.
+    Date Created:   10/19/2024
+    Description:    The purpose of this file is to define a header for the core functionality
+                    as required by this assignment for the web-server.
 */
 #ifndef WEB_SERVER_H
 #define WEB_SERVER_H
@@ -34,9 +33,13 @@ class WebServer{
         void setupListening(struct protoent* protoinfo, int &listenSD, struct sockaddr_in &sin);
         void awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, int listenSD);
         bool respondToRequest(int &responseSD);
-        int findOccurances(string toRead, string occurancesSubstring);
+        
+        // Helpers to the core methods which abstract away some of the complexity - essential components
         vector<string> readResponse(string &response, int &responseSD);
         unsigned char * getFile(string arg, string &response, int & size);
+
+        // generic helpers
+        int findOccurances(string toRead, string occurancesSubstring);
         void writeResponse(int socketDescriptor, string toWrite);
         void writeResponse(int socketDescriptor, unsigned char * toWrite, int length);
         unsigned char * grabFileContents(FILE * file, int & size);

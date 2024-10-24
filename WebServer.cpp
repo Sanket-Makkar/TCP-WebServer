@@ -1,14 +1,12 @@
 /*  Name: Sanket Makkar
     CaseID:         sxm1626
     File Name:      WebServer.cpp
-    Date Created:   9/27/2024
-    Description:    The purpose of this file is to implement the core functionality - i.e. the socket work and
-                    arg-responses based on resulting socket work - as required by this assignment. This file in 
-                    particular implements the methods intended to do this work as defined within the WebServer.h
-                    header file.
+    Date Created:   10/19/2024
+    Description:    The purpose of this file is to implement the core functionality for the web-server as required 
+                    by this assignment. This file in particular implements the methods intended to do this work as 
+                    defined within the WebServer.h header file.
 */
 #include "WebServer.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -128,7 +126,7 @@ void WebServer::awaitConnection(struct sockaddr* sdDataHolder, int &responseSD, 
 }
 
 bool WebServer::respondToRequest(int &responseSD){
-    // We will, at some point, send a string response
+    // We will, at some point, send a string response - assume the string is malformed and we will try to prove it is not
     string response = MALFORMED;
 
     // consider response formatting requirements
@@ -160,7 +158,7 @@ bool WebServer::respondToRequest(int &responseSD){
             writeResponse(responseSD, fileBuff, fileSize);
             return true;
         }
-        delete[] fileBuff;
+        delete[] fileBuff; // memory management
     }
     else if (method == VALID_SHUTDOWN_METHOD){
         // now if we want to shut down, verify the auth token and tell the server what to do
@@ -172,6 +170,7 @@ bool WebServer::respondToRequest(int &responseSD){
     return false;
 }
 
+// simple helper, counts occurances of a substring within a string
 int WebServer::findOccurances(string toRead, string occurancesSubstring){
     string copyToRead = toRead;
     int found;
@@ -183,6 +182,7 @@ int WebServer::findOccurances(string toRead, string occurancesSubstring){
     return totalFound;
 }
 
+// this does the job of reading through the incoming http request, and then allows us to setup a response to that request
 vector<string> WebServer::readResponse(string &response, int &responseSD){
     // first we want to grab the whole request
     vector<unsigned char> wholeRequest;
@@ -190,11 +190,14 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
     vector<string> methodAndArgumentBucket = {};
 
     FILE * responseSP = fdopen(responseSD, "r");
+    if (responseSP == NULL){
+        fprintf(stderr, "Error: failed to open response pointer");
+    }
     bool noNewLine = false;
     while ((fgets(buf, BUFLEN, responseSP)) != NULL){ // grab from the socket line by line, put it in buf
         wholeRequest.insert(wholeRequest.end(), buf, buf + strlen(buf)); // we want to keep track of all data, so slap it on the end of the vector
         string wholeStr = string(buf); // it can be useful to view the incoming line as a string
-        if (wholeStr.find("\r\n") < 0){
+        if (wholeStr.find("\r\n") < 0){ 
             noNewLine = false;
             break;
         }
@@ -203,6 +206,7 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
         }
         memset(buf, '\0', BUFLEN); // lets get rid of random values and make all values null-terminated by default
     }
+    fclose(responseSP);
     
     /* Check Malformed Request*/
     // No found "\r\n" for a particular line
@@ -249,6 +253,7 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
     return methodAndArgumentBucket;
 }
 
+// this gets the file we have been told to retrieve from the server
 unsigned char * WebServer::getFile(string arg, string &response, int & size){
     // does it start with a '/'
     if (arg.at(COUNTER_INITIAL_VALUE) != '/'){
@@ -281,6 +286,7 @@ unsigned char * WebServer::getFile(string arg, string &response, int & size){
     return fileBuff;
 }
 
+// this helps us write responses without repeating code
 void WebServer::writeResponse(int socketDescriptor, string toWrite){
     if (write(socketDescriptor, toWrite.c_str(), toWrite.length()) < 0) { // so send what we have
         fprintf(stderr, "Error: unable to write response\n");
@@ -288,6 +294,7 @@ void WebServer::writeResponse(int socketDescriptor, string toWrite){
     }
 }
 
+// an overload for char * (as opposed to string) that we want to write to the socket
 void WebServer::writeResponse(int socketDescriptor, unsigned char * toWrite, int length){
     if (write(socketDescriptor, toWrite, length) < 0) { // so send what we have
         fprintf(stderr, "Error: unable to write response\n");
@@ -295,6 +302,7 @@ void WebServer::writeResponse(int socketDescriptor, unsigned char * toWrite, int
     }
 }
 
+// this generically grabs file contents given a file - also informs of size using passed param.
 unsigned char * WebServer::grabFileContents(FILE * file, int & size){
     fseek(file, COUNTER_INITIAL_VALUE, SEEK_END); // file pointer at end
     int fileSize = ftell(file); // tell position of pointer (gives size indirectly)

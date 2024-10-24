@@ -36,9 +36,10 @@ class WebServer{
         bool respondToRequest(int &responseSD);
         int findOccurances(string toRead, string occurancesSubstring);
         vector<string> readResponse(string &response, int &responseSD);
-        char * getFile(string arg, string &response);
+        unsigned char * getFile(string arg, string &response, int & size);
         void writeResponse(int socketDescriptor, string toWrite);
-        char* grabFileContents(FILE * file);
+        void writeResponse(int socketDescriptor, unsigned char * toWrite, int length);
+        unsigned char * grabFileContents(FILE * file, int & size);
 
     public:
         WebServer(int argLine, string portNumber, string rootDirectory, string authenticationToken); // basic constructor

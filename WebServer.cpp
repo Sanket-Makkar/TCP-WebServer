@@ -144,8 +144,9 @@ bool WebServer::respondToRequest(int &responseSD){
 
     /* Handle GET and SHUTDOWN cases */
     if (method == VALID_GET_METHOD){
-        char * fileBuff;
-        fileBuff = getFile(arg, response);
+        unsigned char * fileBuff;
+        int fileSize;
+        fileBuff = getFile(arg, response, fileSize);
         if (fileBuff == NULL){
             writeResponse(responseSD, response);
             return true;
@@ -156,8 +157,7 @@ bool WebServer::respondToRequest(int &responseSD){
 
         // and don't forget the file
         if (fileBuff != NULL){
-            string strFileBuff = fileBuff;
-            writeResponse(responseSD, strFileBuff);
+            writeResponse(responseSD, fileBuff, fileSize);
             return true;
         }
     }
@@ -212,7 +212,7 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
 
     // each line not terminated by \r\n
     string totalRequest = string(wholeRequest.begin(), wholeRequest.end());
-    if ((findOccurances(totalRequest, ":") + OFF_BY_ONE_OFFSET) >= findOccurances(totalRequest, "\r\n")){
+    if (findOccurances(totalRequest, ":") >= findOccurances(totalRequest, "\r\n")){
         return methodAndArgumentBucket;    
     }
 
@@ -249,7 +249,7 @@ vector<string> WebServer::readResponse(string &response, int &responseSD){
     return methodAndArgumentBucket;
 }
 
-char * WebServer::getFile(string arg, string &response){
+unsigned char * WebServer::getFile(string arg, string &response, int & size){
     // does it start with a '/'
     if (arg.at(COUNTER_INITIAL_VALUE) != '/'){
         response = INVALID_FILE_NAME;
@@ -270,8 +270,8 @@ char * WebServer::getFile(string arg, string &response){
     }
     
     // now we want the contents, so we can use a fseek trick to get the whole file without much work.
-    char * fileBuff;
-    fileBuff = grabFileContents(requestedFile);
+    unsigned char * fileBuff;
+    fileBuff = grabFileContents(requestedFile, size);
 
     fclose(requestedFile);
 
@@ -288,12 +288,20 @@ void WebServer::writeResponse(int socketDescriptor, string toWrite){
     }
 }
 
-char * WebServer::grabFileContents(FILE * file){
+void WebServer::writeResponse(int socketDescriptor, unsigned char * toWrite, int length){
+    if (write(socketDescriptor, toWrite, length) < 0) { // so send what we have
+        fprintf(stderr, "Error: unable to write response\n");
+        exitWithErr;
+    }
+}
+
+unsigned char * WebServer::grabFileContents(FILE * file, int & size){
     fseek(file, COUNTER_INITIAL_VALUE, SEEK_END); // file pointer at end
     int fileSize = ftell(file); // tell position of pointer (gives size indirectly)
     fseek(file, COUNTER_INITIAL_VALUE, SEEK_SET); // file pointer at start
+    size = fileSize;
 
-    char * fileBuff = new char[fileSize]; // now we will create a perfectly sized buffer
+    unsigned char * fileBuff = new unsigned char[fileSize]; // now we will create a perfectly sized buffer
     fread(fileBuff, OFF_BY_ONE_OFFSET, fileSize, file); // and fread into that buffer the file
     return fileBuff; // and return the buffer - closing the file is on the person calling this
 }
